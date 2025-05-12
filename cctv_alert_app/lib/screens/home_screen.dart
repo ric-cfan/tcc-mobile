@@ -1,74 +1,45 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
-import '../core/websocket_manager.dart';
 import '../core/image_display.dart';
+import '../core/services/background_socket.dart';
+import '../core/services/notifications_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  final String? initialImageBase64; 
+
+  const HomeScreen({super.key, this.initialImageBase64});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  WebSocketManager? _webSocketManager;
+  late BackgroundSocket _backgroundSocket;
   String _imageBase64 = '';
   String _status = 'Desconectado';
-  StreamSubscription? _subscription;
-  Timer? _reconnectTimer;
-
-  final String _url = 'ws://localhost:8000/ws';
 
   @override
   void initState() {
     super.initState();
-    _connectWebSocket();
-  }
+    _backgroundSocket = BackgroundSocket();
+    _backgroundSocket.start('ws://localhost:8000/ws', (message) {
+      setState(() {
+        _imageBase64 = message;
+        _status = 'Conectado';
+      });
 
-  void _connectWebSocket() {
-    setState(() {
-      _status = 'Conectando...';
+      // Exibe a notificação com a imagem
+      NotificationsService.show(message);
     });
 
-    try {
-      _webSocketManager = WebSocketManager(WebSocketChannel.connect(Uri.parse(_url)));
-      _subscription = _webSocketManager!.listen().listen(
-        (message) {
-          setState(() {
-            _imageBase64 = message;
-            _status = 'Conectado';
-          });
-        },
-        onDone: _handleDisconnection,
-        onError: (error) {
-          _handleDisconnection();
-        },
-      );
-    } catch (_) {
-      _handleDisconnection();
+    // Verifica se a imagem inicial foi recebida
+    if (widget.initialImageBase64 != null && widget.initialImageBase64!.isNotEmpty) {
+      _imageBase64 = widget.initialImageBase64!;
     }
-  }
-
-  void _handleDisconnection() {
-    setState(() {
-      _status = 'Desconectado. Tentando reconectar...';
-    });
-
-    _subscription?.cancel();
-    _webSocketManager?.close();
-
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 3), () {
-      _connectWebSocket();
-    });
   }
 
   @override
   void dispose() {
-    _subscription?.cancel();
-    _webSocketManager?.close();
-    _reconnectTimer?.cancel();
+    _backgroundSocket.stop();
     super.dispose();
   }
 
