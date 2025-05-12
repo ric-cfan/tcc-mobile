@@ -4,43 +4,45 @@ import '../core/services/background_socket.dart';
 import '../core/services/notifications_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  final String? initialImageBase64; 
-
-  const HomeScreen({super.key, this.initialImageBase64});
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late BackgroundSocket _backgroundSocket;
   String _imageBase64 = '';
   String _status = 'Desconectado';
+  bool _isInForeground = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     _backgroundSocket = BackgroundSocket();
-    _backgroundSocket.start('ws://localhost:8000/ws', (message) {
+    _backgroundSocket.start('ws://localhost:8000/ws', (message) async {
+      if (!_isInForeground) {
+        await NotificationsService.show(message);
+      }
       setState(() {
         _imageBase64 = message;
         _status = 'Conectado';
       });
-
-      // Exibe a notificação com a imagem
-      NotificationsService.show(message);
     });
-
-    // Verifica se a imagem inicial foi recebida
-    if (widget.initialImageBase64 != null && widget.initialImageBase64!.isNotEmpty) {
-      _imageBase64 = widget.initialImageBase64!;
-    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _backgroundSocket.stop();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isInForeground = state == AppLifecycleState.resumed;
   }
 
   @override
