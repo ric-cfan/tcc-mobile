@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 class ImageDisplay extends StatelessWidget {
   final String base64Image;
 
-  const ImageDisplay({Key? key, required this.base64Image}) : super(key: key);
+  const ImageDisplay({super.key, required this.base64Image});
 
   @override
   Widget build(BuildContext context) {

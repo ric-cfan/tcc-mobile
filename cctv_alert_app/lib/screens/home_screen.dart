@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/image_display.dart';
 import '../core/services/background_socket.dart';
 import '../core/services/notifications_service.dart';
+import 'package:http/http.dart' as http;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,14 +13,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  late BackgroundSocket _backgroundSocket;
+  final List<BackgroundSocket> _sockets = [];
   String _imageBase64 = '';
   String _date = '';
   String _time = '';
   String _timezone = '';
   String _camera = '';
   String _status = 'Desconectado';
-  bool _isInForeground = true;
   bool _isAlarmPlaying = false;
 
   @override
@@ -27,59 +27,75 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Passa o callback para o NotificationsService para esconder botão ao clicar na notificação
     NotificationsService.setOnNotificationClick(() {
-      setState(() {
-        _isAlarmPlaying = false;
-      });
+      setState(() => _isAlarmPlaying = false);
     });
 
-    _backgroundSocket = BackgroundSocket();
-    _backgroundSocket.start('ws://localhost:8000/ws', (message) async {
-      try {
-        final data = json.decode(message);
-        final base64 = data['image_base64'];
-        final date = data['date'];
-        final time = data['time'];
-        final timezone = data['timezone'];
-        final camera = data['camera'];
+    _initializeSockets();
+  }
 
-        // Mostra notificação e toca alarme
-        await NotificationsService.show(base64);
+  Future<void> _initializeSockets() async {
+    try {
+      final response = await http.get(Uri.parse('http://localhost:8000/cameras'));
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> body = json.decode(response.body);
+          final List<dynamic> cameras = body['cameras'];
 
-        setState(() {
-          _imageBase64 = base64;
-          _date = date;
-          _time = time;
-          _timezone = timezone;
-          _camera = camera ?? '';
-          _status = 'Conectado';
-          _isAlarmPlaying = true;
-        });
-      } catch (e) {
-        setState(() => _status = 'Erro ao decodificar JSON');
+        for (final camera in cameras) {
+          final socket = BackgroundSocket();
+          _sockets.add(socket);
+
+          socket.start('ws://localhost:8000/ws/$camera', (message) async {
+            try {
+              final data = json.decode(message);
+              final base64 = data['image_base64'];
+              final date = data['date'];
+              final time = data['time'];
+              final timezone = data['timezone'];
+              final cameraId = data['camera'];
+
+              await NotificationsService.show(base64);
+
+              setState(() {
+                _imageBase64 = base64;
+                _date = date;
+                _time = time;
+                _timezone = timezone;
+                _camera = cameraId ?? camera.toString();
+                _status = 'Conectado';
+                _isAlarmPlaying = true;
+              });
+            } catch (_) {
+              setState(() => _status = 'Erro ao decodificar JSON');
+            }
+          });
+        }
+      } else {
+        setState(() => _status = 'Erro ao obter lista de câmeras');
       }
-    });
+    } catch (e) {
+      setState(() => _status = 'Falha na requisição HTTP: $e');
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _backgroundSocket.stop();
+    for (final socket in _sockets) {
+      socket.stop();
+    }
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _isInForeground = state == AppLifecycleState.resumed;
+    // Não utilizado diretamente
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('WebSocket Image Viewer'),
-      ),
+      appBar: AppBar(title: const Text('WebSocket Image Viewer')),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -89,7 +105,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 20),
           if (_date.isNotEmpty && _time.isNotEmpty) ...[
-            const SizedBox(height: 10),
             Text('Data: $_date'),
             Text('Hora: $_time'),
             Text('Fuso horário: $_timezone'),
@@ -100,9 +115,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ElevatedButton(
               onPressed: () async {
                 await NotificationsService.cancel();
-                setState(() {
-                  _isAlarmPlaying = false;
-                });
+                setState(() => _isAlarmPlaying = false);
               },
               child: const Text('Parar Alarme'),
             ),

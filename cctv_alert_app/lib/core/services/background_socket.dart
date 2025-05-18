@@ -6,24 +6,25 @@ class BackgroundSocket {
   late WebSocketManager _webSocketManager;
   StreamSubscription? _subscription;
   String _status = 'Desconectado';
+  late String _url;
+  late Function(String message) _onMessageReceived;
 
   void start(String url, Function(String message) onMessageReceived) {
-    _connect(url, onMessageReceived);
+    _url = url;
+    _onMessageReceived = onMessageReceived;
+    _connect();
   }
 
-  void _connect(String url, Function(String message) onMessageReceived) {
+  void _connect() {
     try {
       _status = 'Conectando...';
-      _webSocketManager = WebSocketManager(WebSocketChannel.connect(Uri.parse(url)));
+      _webSocketManager = WebSocketManager(WebSocketChannel.connect(Uri.parse(_url)));
 
       _subscription = _webSocketManager.listen().listen((message) {
         _status = 'Conectado';
-        onMessageReceived(message);  // Passando a imagem para quem chamou
+        _onMessageReceived(message);
       }, onDone: _handleDisconnection, onError: (error, stackTrace) {
         _handleDisconnection();
-        // Log or handle the error and stack trace here if needed
-        print("WebSocket error: $error");
-        print("Stack trace: $stackTrace");
       });
     } catch (_) {
       _handleDisconnection();
@@ -32,8 +33,8 @@ class BackgroundSocket {
 
   void _handleDisconnection() {
     _status = 'Desconectado. Tentando reconectar...';
-    _webSocketManager.reconnect('ws://localhost:8000/ws', () {
-      _connect('ws://localhost:8000/ws', (message) {});
+    _webSocketManager.reconnect(_url, () {
+      _connect();
     });
   }
 
