@@ -17,13 +17,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _date = '';
   String _time = '';
   String _timezone = '';
+  String _camera = '';
   String _status = 'Desconectado';
   bool _isInForeground = true;
+  bool _isAlarmPlaying = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Passa o callback para o NotificationsService para esconder botão ao clicar na notificação
+    NotificationsService.setOnNotificationClick(() {
+      setState(() {
+        _isAlarmPlaying = false;
+      });
+    });
 
     _backgroundSocket = BackgroundSocket();
     _backgroundSocket.start('ws://localhost:8000/ws', (message) async {
@@ -33,17 +42,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final date = data['date'];
         final time = data['time'];
         final timezone = data['timezone'];
+        final camera = data['camera'];
 
-        if (!_isInForeground) {
-          await NotificationsService.show('Nova imagem recebida');
-        }
+        // Mostra notificação e toca alarme
+        await NotificationsService.show(base64);
 
         setState(() {
           _imageBase64 = base64;
           _date = date;
           _time = time;
           _timezone = timezone;
+          _camera = camera ?? '';
           _status = 'Conectado';
+          _isAlarmPlaying = true;
         });
       } catch (e) {
         setState(() => _status = 'Erro ao decodificar JSON');
@@ -82,7 +93,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             Text('Data: $_date'),
             Text('Hora: $_time'),
             Text('Fuso horário: $_timezone'),
+            Text('Câmera: $_camera'),
           ],
+          const SizedBox(height: 20),
+          if (_isAlarmPlaying)
+            ElevatedButton(
+              onPressed: () async {
+                await NotificationsService.cancel();
+                setState(() {
+                  _isAlarmPlaying = false;
+                });
+              },
+              child: const Text('Parar Alarme'),
+            ),
           const SizedBox(height: 20),
           Expanded(
             child: Center(
